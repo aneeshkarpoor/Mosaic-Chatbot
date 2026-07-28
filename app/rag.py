@@ -7,7 +7,6 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Iterable
 
-
 TOKEN_RE = re.compile(r"[a-z0-9]+")
 STOP_WORDS = {
     "a", "an", "and", "are", "as", "at", "be", "been", "but", "by",
