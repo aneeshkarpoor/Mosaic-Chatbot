@@ -1,0 +1,9 @@
+.env
+.env.local
+__pycache__/
+*.py[cod]
+data/prototype.db
+.DS_Store
+node_modules/
+dist/
+build/
