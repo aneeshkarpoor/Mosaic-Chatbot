@@ -1,6 +1,13 @@
 const STORAGE_KEY = "mosaic-pathway-prototype-v1";
 const profileFields = ["ages", "interests", "learning_needs", "leave_behind", "preserve", "add", "values"];
 const state = loadState();
+let resourceCount = 0;
+
+function setStatus(message, mode) {
+  const status = document.getElementById("status");
+  status.textContent = message;
+  status.dataset.mode = mode;
+}
 
 function newSessionId() {
   return globalThis.crypto?.randomUUID?.() || `session-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -206,7 +213,11 @@ document.getElementById("chat-form").addEventListener("submit", async event => {
     addMessage("assistant", result.message);
     renderSources(result.sources);
     document.getElementById("sources-panel").open = true;
-    if (result.mode === "demo") document.getElementById("status").textContent = "Demo mode · retrieval active · Claude key not set";
+    if (result.mode === "claude") {
+      setStatus(`Claude active · response grounded in ${result.sources.length} sources`, "claude");
+    } else {
+      setStatus(`Demo fallback · retrieval active · ${resourceCount} resources`, "demo");
+    }
   } catch (error) {
     pending.remove();
     addMessage("assistant", `I couldn’t complete that request. ${error.message}`, false);
@@ -289,7 +300,11 @@ document.getElementById("generate-pathway").addEventListener("click", async even
       history: state.history,
     });
     renderPathway(result.pathway);
-    if (result.mode === "demo") document.getElementById("status").textContent = "Demo mode · pathway template + retrieved resources";
+    if (result.mode === "claude") {
+      setStatus("Claude active · personalized pathway generated", "claude");
+    } else {
+      setStatus(`Demo fallback · pathway template · ${resourceCount} resources`, "demo");
+    }
   } catch (error) {
     addMessage("assistant", `I couldn’t create the pathway. ${error.message}`, false);
   } finally {
@@ -325,11 +340,14 @@ async function initialize() {
   for (const message of state.history) addMessage(message.role, message.content, false);
   try {
     const health = await fetch("/api/health").then(response => response.json());
-    document.getElementById("status").textContent = health.mode === "claude"
-      ? `Claude connected · ${health.resource_count} approved resources`
-      : `Demo mode · ${health.resource_count} approved resources`;
+    resourceCount = health.resource_count;
+    if (health.mode === "claude") {
+      setStatus(`Claude connected · RAG active · ${resourceCount} resources`, "claude");
+    } else {
+      setStatus(`Demo mode · ${resourceCount} resources`, "demo");
+    }
   } catch {
-    document.getElementById("status").textContent = "Server unavailable";
+    setStatus("Server unavailable", "error");
   }
 }
 

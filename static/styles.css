@@ -27,7 +27,11 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus
 .site-header { min-height: 76px; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0 5vw; border-bottom: 1px solid rgba(49, 94, 80, 0.14); background: rgba(255, 253, 248, 0.76); backdrop-filter: blur(12px); position: sticky; top: 0; z-index: 10; }
 .brand { display: flex; align-items: center; text-decoration: none; }
 .brand-logo { display: block; width: 160px; height: auto; }
-.status { color: var(--moss-dark); background: var(--sage); padding: .45rem .75rem; border-radius: 999px; font-size: .82rem; }
+.status { display: flex; align-items: center; gap: .45rem; color: var(--moss-dark); background: var(--sage); padding: .45rem .75rem; border-radius: 999px; font-size: .82rem; }
+.status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #87928d; }
+.status[data-mode="claude"]::before { background: #3f8a63; }
+.status[data-mode="demo"]::before { background: #d38a3e; }
+.status[data-mode="error"]::before { background: var(--danger); }
 
 main { width: min(1220px, 92vw); margin: 0 auto 5rem; }
 .hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, .9fr); gap: clamp(2rem, 5vw, 4.5rem); align-items: center; padding: 4.5rem 0 2.3rem; }

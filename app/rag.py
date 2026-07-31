@@ -71,7 +71,7 @@ class KnowledgeBase:
     """Small, auditable field-weighted retriever for the curated Mosaic CSV.
 
     This is intentionally lexical for the first prototype. It is deterministic,
-    needs no second AI provider, and makes relevance easy to inspect with a 29-row
+    needs no second AI provider, and makes relevance easy to inspect with a curated
     corpus. The interface can later be backed by embeddings without changing API
     handlers or the browser application.
     """

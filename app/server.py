@@ -130,7 +130,7 @@ def demo_chat(resources: list[Resource]) -> str:
         "then make one small change that creates more room for it. Mosaic's library emphasizes "
         f"{first.key_takeaway[:220].rstrip('.')} [{first.id}]. You might also consider the "
         f"perspective in “{second.title}” as a gentle conversation starter [{second.id}].\n\n"
-        "This is local demo wording. Add an Anthropic API key to generate a fully tailored response."
+        "This is local demo wording because the Claude request was unavailable."
     )
 
 
@@ -255,6 +255,7 @@ def generate_chat(payload: dict) -> dict:
     except ClaudeError as error:
         if os.getenv("ALLOW_DEMO_FALLBACK", "true").lower() != "true":
             raise
+        print(f"Claude chat fallback: {error}", file=sys.stderr)
         mode = "demo"
         warning = str(error)
         response = demo_chat(resources)
@@ -291,6 +292,7 @@ def generate_pathway(payload: dict) -> dict:
     except (ClaudeError, json.JSONDecodeError) as error:
         if os.getenv("ALLOW_DEMO_FALLBACK", "true").lower() != "true":
             raise
+        print(f"Claude pathway fallback: {error}", file=sys.stderr)
         mode = "demo"
         warning = str(error)
         pathway = demo_pathway(

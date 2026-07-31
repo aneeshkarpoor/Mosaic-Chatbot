@@ -22,6 +22,7 @@ Hard rules:
    "One possibility is..." Never diagnose, shame, promise outcomes, or prescribe.
 6. Do not invent titles, URLs, authors, Mosaic programs, events, or community groups.
 7. Cite supporting resources using their exact bracketed IDs, such as [R004].
+8. Use plain text only. Do not use Markdown formatting.
 """.strip()
 
 
@@ -51,7 +52,7 @@ def pathway_system(context: str) -> str:
         f"{BOUNDARY_RULES}\n\n"
         "Create a calm, practical two-week starting pathway. Reflect the family's own "
         "language without overclaiming what they feel. Rhythms must be small, doable, and "
-        "age-aware. Select exactly 2 or 3 non-community resources and exactly one community "
+        "age-aware, with 3 to 5 rhythm items. Select exactly 2 or 3 non-community resources and exactly one community "
         "resource, all from the provided IDs. Do not place URLs in prose.\n\n"
         f"MOSAIC_CONTEXT\n{context}\nEND_MOSAIC_CONTEXT"
     )
@@ -86,8 +87,6 @@ PATHWAY_SCHEMA = {
         "reflection": {"type": "string"},
         "rhythm": {
             "type": "array",
-            "minItems": 3,
-            "maxItems": 5,
             "items": {
                 "type": "object",
                 "properties": {
@@ -101,8 +100,6 @@ PATHWAY_SCHEMA = {
         },
         "resources": {
             "type": "array",
-            "minItems": 2,
-            "maxItems": 3,
             "items": {
                 "type": "object",
                 "properties": {
