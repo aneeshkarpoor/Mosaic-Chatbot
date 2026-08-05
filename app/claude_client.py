@@ -14,7 +14,7 @@ class ClaudeClient:
     def __init__(self) -> None:
         self.api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
         self.model = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6").strip()
-        self.timeout = int(os.getenv("CLAUDE_TIMEOUT_SECONDS", "60"))
+        self.timeout = int(os.getenv("CLAUDE_TIMEOUT_SECONDS", "120"))
 
     @property
     def configured(self) -> bool:
@@ -43,7 +43,6 @@ class ClaudeClient:
                 "format": {"type": "json_schema", "schema": json_schema}
             }
 
-        # Need to update the request payload later once model is decided
         request = urllib.request.Request(
             "https://api.anthropic.com/v1/messages",
             data=json.dumps(payload).encode("utf-8"),
@@ -60,7 +59,7 @@ class ClaudeClient:
         except urllib.error.HTTPError as error:
             detail = error.read().decode("utf-8", errors="replace")
             raise ClaudeError(f"Claude API returned HTTP {error.code}: {detail[:500]}") from error
-        except (urllib.error.URLError, TimeoutError) as error:
+        except (urllib.error.URLError, TimeoutError, OSError) as error:
             raise ClaudeError(f"Could not reach Claude API: {error}") from error
 
         text_parts = [part.get("text", "") for part in body.get("content", []) if part.get("type") == "text"]

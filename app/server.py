@@ -48,6 +48,7 @@ def load_dotenv(path: Path) -> None:
 load_dotenv(BASE_DIR / ".env")
 KB = KnowledgeBase(Path(os.getenv("MOSAIC_KB_PATH", DATA_DIR / "mosaic_resources.csv")))
 CLAUDE = ClaudeClient()
+print(f"[Mosaic RAG] Active knowledge base: {KB.source} ({len(KB.resources)} resources)")
 
 
 def init_database() -> None:
@@ -66,8 +67,83 @@ def init_database() -> None:
         )
 
 
+def save_feedback(session_id: str, useful: bool | None, notes: str) -> dict:
+    feedback_id = str(uuid.uuid4())
+    database_url = os.getenv("DATABASE_URL", "").strip()
+
+    if database_url:
+        try:
+            import psycopg
+
+            with psycopg.connect(database_url, connect_timeout=15) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO public.mosaic_feedback
+                        (id, session_id, useful, notes)
+                    VALUES (%s, %s, %s, %s)
+                    """,
+                    (feedback_id, session_id[:100], useful, notes[:2000]),
+                )
+            return {"saved": True, "feedback_id": feedback_id, "storage": "supabase"}
+        except Exception as error:
+            print(
+                "[Mosaic feedback] Supabase save failed; using SQLite fallback: "
+                f"{type(error).__name__}: {error}",
+                file=sys.stderr,
+            )
+
+    with sqlite3.connect(DB_PATH) as connection:
+        connection.execute(
+            "INSERT INTO feedback VALUES (?, ?, ?, ?, ?)",
+            (
+                feedback_id,
+                session_id[:100],
+                1 if useful is True else 0 if useful is False else None,
+                notes[:2000],
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
+    return {"saved": True, "feedback_id": feedback_id, "storage": "sqlite"}
+
+
+def delete_feedback(session_id: str) -> dict:
+    database_url = os.getenv("DATABASE_URL", "").strip()
+    supabase_count = 0
+
+    if database_url:
+        try:
+            import psycopg
+
+            with psycopg.connect(database_url, connect_timeout=15) as connection:
+                cursor = connection.execute(
+                    "DELETE FROM public.mosaic_feedback WHERE session_id = %s",
+                    (session_id[:100],),
+                )
+                supabase_count = cursor.rowcount
+        except Exception as error:
+            print(
+                "[Mosaic feedback] Supabase deletion failed: "
+                f"{type(error).__name__}: {error}",
+                file=sys.stderr,
+            )
+
+    with sqlite3.connect(DB_PATH) as connection:
+        cursor = connection.execute(
+            "DELETE FROM feedback WHERE session_id = ?",
+            (session_id[:100],),
+        )
+        sqlite_count = cursor.rowcount
+
+    return {
+        "deleted": True,
+        "feedback_records": supabase_count + sqlite_count,
+        "supabase_records": supabase_count,
+        "sqlite_records": sqlite_count,
+    }
+
+
 def parse_ages(profile: dict) -> list[int]:
-    value = profile.get("ages", [])
+    value = profile.get("child_age", profile.get("ages", []))
     if isinstance(value, list):
         candidates = value
     else:
@@ -81,6 +157,22 @@ def parse_ages(profile: dict) -> list[int]:
         if 0 <= age <= 30:
             ages.append(age)
     return ages
+
+
+def family_metadata(profile: dict) -> dict:
+    parent_name = str(profile.get("parent_name", "")).strip() or "Your family"
+    child_name = str(profile.get("child_name", "")).strip() or "Your learner"
+    ages = parse_ages(profile)
+    surname_parts = parent_name.split()
+    family_name = f"{surname_parts[-1]} family" if surname_parts else "Your family"
+    return {
+        "parent_name": parent_name,
+        "parent_first_name": parent_name.split()[0],
+        "child_name": child_name,
+        "child_first_name": child_name.split()[0],
+        "child_age": ages[0] if ages else None,
+        "family_name": family_name,
+    }
 
 
 def profile_query(profile: dict, message: str = "") -> str:
@@ -122,6 +214,48 @@ def clean_citations(text: str, allowed_ids: set[str]) -> str:
     return CITATION_RE.sub(lambda match: match.group(0) if match.group(1) in allowed_ids else "", text)
 
 
+def name_daily_guidance(pathway: dict, profile: dict) -> None:
+    family = family_metadata(profile)
+    child_name = family["child_first_name"]
+    parent_name = family["parent_first_name"]
+    full_names = (
+        (family["child_name"], child_name),
+        (family["parent_name"], parent_name),
+    )
+    def use_first_names(value: object) -> str:
+        text = str(value or "").strip()
+        for full_name, first_name in full_names:
+            text = re.sub(
+                rf"\b{re.escape(full_name)}\b",
+                first_name,
+                text,
+                flags=re.IGNORECASE,
+            )
+        return text
+
+    def remove_for_name_prefix(value: str, first_name: str) -> str:
+        return re.sub(
+            rf"^\s*For\s+{re.escape(first_name)}\s*:\s*",
+            "",
+            value,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+
+    for week in pathway.get("weeks", []):
+        week["theme"] = use_first_names(week.get("theme"))
+        week["introduction"] = use_first_names(week.get("introduction"))
+        for day in week.get("days", []):
+            day["title"] = use_first_names(day.get("title"))
+            activity = use_first_names(day.get("child_activity"))
+            day["child_activity"] = remove_for_name_prefix(activity, child_name)
+
+            prompt = use_first_names(day.get("parent_prompt"))
+            prompt = re.sub(r"\byour\b", f"{parent_name}'s", prompt, flags=re.IGNORECASE)
+            prompt = re.sub(r"\byou\b", parent_name, prompt, flags=re.IGNORECASE)
+            day["parent_prompt"] = remove_for_name_prefix(prompt, parent_name)
+
+
 def demo_chat(resources: list[Resource]) -> str:
     first = resources[0]
     second = resources[1] if len(resources) > 1 else resources[0]
@@ -141,59 +275,95 @@ def demo_pathway(
     conversation_priorities: list[str],
     assistant_insight: str,
 ) -> dict:
-    ages = parse_ages(profile)
-    age_phrase = f"for ages {', '.join(str(age) for age in ages)}" if ages else "for your family"
+    family = family_metadata(profile)
+    child = family["child_name"]
+    child_first_name = family["child_first_name"]
+    age_phrase = f", age {family['child_age']}," if family["child_age"] is not None else ""
     intentions = profile.get("values") or profile.get("add") or "more trust, curiosity, and connection"
     interests = profile.get("interests") or "the interests already showing up"
     current_priority = conversation_priorities[-1][:240] if conversation_priorities else ""
-    priority_reflection = (
-        f" In your conversation, you identified this immediate focus: “{current_priority}”."
-        if current_priority
-        else ""
-    )
-    response_reflection = (
-        f" The conversation also surfaced this possibility: “{assistant_insight}”."
-        if assistant_insight
-        else ""
-    )
-    first_practice = (
-        f"Choose one small, low-pressure experiment connected to this priority: {current_priority}"
-        if current_priority
-        else "Notice and jot down one moment of sustained interest each day, without redirecting it."
-    )
+    learning_needs = profile.get("learning_needs") or ""
+    conversation_note = f" You also named this immediate focus: {current_priority}" if current_priority else ""
+    assistant_note = f" One possibility already surfaced in your conversation: {assistant_insight}" if assistant_insight else ""
+
+    activities = [
+        ("Notice the spark", f"{child_first_name} might choose one part of {interests} to explore for twenty minutes.", "What held their attention without prompting?"),
+        ("Make the choice visible", f"Offer two simple ways to explore {interests}, and let {child_first_name} choose or suggest another.", "What changed when the choice belonged to them?"),
+        ("Follow a question", "Write down one question that comes up and explore it together using a Mosaic resource.", "Did the question grow, shift, or lead somewhere unexpected?"),
+        ("Share the lead", f"Ask {child_first_name} to show or explain something they enjoy about {interests}.", "What did you notice when you became the learner?"),
+        ("Pause and look back", "Choose one moment from the week that felt energizing and one that felt heavy.", "What might you keep, change, or release next week?"),
+        ("Begin with connection", "Start with a short shared activity before offering an independent suggested activity.", "Did connection change how the suggested activity was received?"),
+        ("Try it with others", f"Explore a cooperative version of {interests} with a friend, sibling, or community member.", "What supported participation and belonging?"),
+        ("Build something useful", "Turn a current interest into a small project that matters to your family or community.", "Where did purpose or pride show up?"),
+        ("Leave room to revise", f"{child_first_name} might change one part of the plan or replace it entirely.", "What did their revision reveal about what they need?"),
+        ("Name what to carry forward", "Together, choose one practice from these two weeks that feels worth repeating.", "What is the smallest version that could fit naturally next week?"),
+    ]
+    weeks = []
+    for week_number in (1, 2):
+        start = (week_number - 1) * 5
+        weeks.append({
+            "week_number": week_number,
+            "theme": "Notice and explore" if week_number == 1 else "Connect and adapt",
+            "introduction": (
+                "Begin by observing what creates energy, then try small suggested activities without requiring a particular outcome."
+                if week_number == 1
+                else "Build gently on what you noticed, with more connection, learner choice, and room to revise."
+            ),
+            "days": [
+                {
+                    "day": index + 1,
+                    "title": activities[index][0],
+                    "child_activity": activities[index][1],
+                    "parent_prompt": activities[index][2],
+                }
+                for index in range(start, start + 5)
+            ],
+        })
+
     return {
-        "title": "A gentle two-week starting pathway",
-        "reflection": (
-            f"You are looking for a learning rhythm {age_phrase} that makes more room for {interests}. "
-            f"The intentions you named—{intentions}—can serve as a compass while you experiment."
-            f"{priority_reflection}{response_reflection}"
+        "family": family,
+        "family_welcome": (
+            f"Welcome, {family['family_name']}. You are making space for {child}{age_phrase} to learn through "
+            f"{interests}, while holding {intentions} as a compass. This plan is a starting point, not a test. "
+            "Notice what brings energy, adapt what does not fit, and let your family's real experience guide the next step."
+            f"{conversation_note}{assistant_note}"
         ),
-        "rhythm": [
-            {
-                "when": "Days 1–3",
-                "practice": first_practice,
-                "why_it_fits": "This begins with the priority you named and keeps the first step manageable.",
-            },
-            {
-                "when": "Days 4–7",
-                "practice": "Offer one low-pressure invitation connected to a noticed interest and let participation be optional.",
-                "why_it_fits": "An invitation creates possibility while preserving learner agency.",
-            },
-            {
-                "when": "Week 2",
-                "practice": "Hold a ten-minute family check-in: what felt energizing, heavy, or worth trying again?",
-                "why_it_fits": "A short reflection helps the rhythm adapt to the family's real experience.",
-            },
-        ],
+        "learner_support": {
+            "show": bool(str(learning_needs).strip()),
+            "heading": f"Made with {child} in mind",
+            "message": f"You shared that {learning_needs}. You might treat this as useful context for pacing, communication, and choice—not as a limit on what is possible.",
+        },
+        "guide_preparation": (
+            f"You might bring your observations about {interests}, the family's wish to leave behind "
+            f"{profile.get('leave_behind') or 'unhelpful pressure'}, and what support would make the next experiment feel sustainable."
+        ),
+        "weeks": weeks,
         "resources": [
-            {"resource_id": resource.id, "why_it_fits": resource.parent_need}
-            for resource in resources[:3]
+            {
+                "resource_id": resource.id,
+                "why_it_fits": resource.parent_need or resource.key_takeaway,
+                "section": "watch_explore" if index == 0 else "reading_corner",
+            }
+            for index, resource in enumerate(resources[:3])
         ],
         "community": {
             "resource_id": community.id,
             "why_it_fits": "A low-pressure place to listen, connect, and hear how other families are navigating their paths.",
         },
-        "closing_note": "add closing message later",
+        "when_it_wobbles": [
+            {
+                "moment": "A suggested activity is met with a no",
+                "response": "You might pause without persuading, then return later with a smaller choice or ask what would make it feel more inviting.",
+            },
+            {
+                "moment": "The plan starts to feel like another schedule",
+                "response": "Consider keeping only the one practice that creates connection and letting the rest wait. The plan is meant to serve your family.",
+            },
+        ],
+        "what_comes_next": (
+            "At the end of two weeks, notice what your learner asked to repeat, what supported connection, and what felt heavy. "
+            "Bring those observations to Mosaic as the starting point for your next pathway."
+        ),
     }
 
 
@@ -202,6 +372,16 @@ def enrich_and_validate_pathway(
     retrieved_resources: list[Resource],
     community_candidates: list[Resource],
 ) -> dict:
+    weeks = pathway.get("weeks", [])
+    if len(weeks) != 2 or any(len(week.get("days", [])) != 5 for week in weeks):
+        raise ValueError("Claude did not return exactly two weeks with five days each")
+    if len(pathway.get("when_it_wobbles", [])) != 2:
+        raise ValueError("Claude did not return exactly two when-it-wobbles entries")
+    for week_index, week in enumerate(weeks):
+        week["week_number"] = week_index + 1
+        for day_index, day in enumerate(week["days"]):
+            day["day"] = week_index * 5 + day_index + 1
+
     allowed = {resource.id: resource for resource in retrieved_resources}
     allowed_community = {resource.id: resource for resource in community_candidates}
 
@@ -213,15 +393,25 @@ def enrich_and_validate_pathway(
             selections.append({
                 **allowed[resource_id].public_dict(),
                 "why_it_fits": item.get("why_it_fits", ""),
+                "section": item.get("section", "watch_explore"),
             })
             seen.add(resource_id)
     for resource in retrieved_resources:
         if len(selections) >= 2:
             break
         if resource.id not in seen and not resource.is_community:
-            selections.append({**resource.public_dict(), "why_it_fits": resource.parent_need})
+            selections.append({
+                **resource.public_dict(),
+                "why_it_fits": resource.parent_need,
+                "section": "watch_explore" if not selections else "reading_corner",
+            })
             seen.add(resource.id)
     pathway["resources"] = selections[:3]
+    sections = {item["section"] for item in pathway["resources"]}
+    if pathway["resources"] and "watch_explore" not in sections:
+        pathway["resources"][0]["section"] = "watch_explore"
+    if len(pathway["resources"]) > 1 and "reading_corner" not in sections:
+        pathway["resources"][1]["section"] = "reading_corner"
 
     requested_community = pathway.get("community", {})
     community_id = requested_community.get("resource_id")
@@ -275,7 +465,7 @@ def generate_pathway(payload: dict) -> dict:
     assistant_insight = latest_assistant_insight(history)
     query = profile_query(profile, " ".join(conversation_priorities))
     ages = parse_ages(profile)
-    resources = KB.search(query, ages=ages, limit=7, community=False)
+    resources = KB.search(query, ages=ages, limit=9, community=False)
     communities = KB.search(query, ages=ages, limit=3, community=True)
     context = KB.context([*resources, *communities])
 
@@ -285,11 +475,13 @@ def generate_pathway(payload: dict) -> dict:
         raw = CLAUDE.create_message(
             system=pathway_system(context),
             user=pathway_user(profile, history),
-            max_tokens=1800,
+            max_tokens=3200,
             json_schema=PATHWAY_SCHEMA,
         )
         pathway = json.loads(raw)
-    except (ClaudeError, json.JSONDecodeError) as error:
+        pathway = enrich_and_validate_pathway(pathway, resources, communities)
+        name_daily_guidance(pathway, profile)
+    except (ClaudeError, json.JSONDecodeError, ValueError) as error:
         if os.getenv("ALLOW_DEMO_FALLBACK", "true").lower() != "true":
             raise
         print(f"Claude pathway fallback: {error}", file=sys.stderr)
@@ -302,8 +494,13 @@ def generate_pathway(payload: dict) -> dict:
             conversation_priorities,
             assistant_insight,
         )
-
-    pathway = enrich_and_validate_pathway(pathway, resources, communities)
+        pathway = enrich_and_validate_pathway(pathway, resources, communities)
+        name_daily_guidance(pathway, profile)
+    pathway["family"] = family_metadata(profile)
+    pathway["citation_sources"] = [
+        resource.public_dict()
+        for resource in [*resources, *communities]
+    ]
     return {"pathway": pathway, "mode": mode, "warning": warning}
 
 
@@ -355,6 +552,8 @@ class MosaicHandler(BaseHTTPRequestHandler):
                 "mode": "claude" if CLAUDE.configured else "demo",
                 "model": CLAUDE.model if CLAUDE.configured else None,
                 "resource_count": len(KB.resources),
+                "knowledge_base_source": KB.source,
+                "feedback_storage": "supabase" if os.getenv("DATABASE_URL", "").strip() else "sqlite",
                 "persistence": "feedback only; chat and intake are not stored server-side",
             })
             return
@@ -378,24 +577,14 @@ class MosaicHandler(BaseHTTPRequestHandler):
             elif path == "/api/pathway":
                 self._send_json(generate_pathway(payload))
             elif path == "/api/feedback":
-                feedback_id = str(uuid.uuid4())
-                with sqlite3.connect(DB_PATH) as connection:
-                    connection.execute(
-                        "INSERT INTO feedback VALUES (?, ?, ?, ?, ?)",
-                        (
-                            feedback_id,
-                            str(payload.get("session_id", ""))[:100],
-                            1 if payload.get("useful") is True else 0 if payload.get("useful") is False else None,
-                            str(payload.get("notes", ""))[:2000],
-                            datetime.now(timezone.utc).isoformat(),
-                        ),
-                    )
-                self._send_json({"saved": True, "feedback_id": feedback_id})
+                useful = payload.get("useful")
+                self._send_json(save_feedback(
+                    session_id=str(payload.get("session_id", "")),
+                    useful=useful if isinstance(useful, bool) else None,
+                    notes=str(payload.get("notes", "")),
+                ))
             elif path == "/api/delete":
-                session_id = str(payload.get("session_id", ""))[:100]
-                with sqlite3.connect(DB_PATH) as connection:
-                    cursor = connection.execute("DELETE FROM feedback WHERE session_id = ?", (session_id,))
-                self._send_json({"deleted": True, "feedback_records": cursor.rowcount})
+                self._send_json(delete_feedback(str(payload.get("session_id", ""))))
             else:
                 self._send_json({"error": "not found"}, HTTPStatus.NOT_FOUND)
         except (ValueError, json.JSONDecodeError) as error:
@@ -411,7 +600,10 @@ def main() -> None:
     port = int(os.getenv("PORT", "8000"))
     server = ThreadingHTTPServer((host, port), MosaicHandler)
     mode = "Claude API" if CLAUDE.configured else "local demo fallback"
-    print(f"Mosaic prototype running at http://{host}:{port} ({mode}, {len(KB.resources)} resources)")
+    print(
+        f"Mosaic prototype running at http://{host}:{port} "
+        f"({mode}, {len(KB.resources)} resources from {KB.source})"
+    )
     try:
         server.serve_forever()
     except KeyboardInterrupt:

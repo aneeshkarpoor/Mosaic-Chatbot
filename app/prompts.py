@@ -23,6 +23,7 @@ Hard rules:
 6. Do not invent titles, URLs, authors, Mosaic programs, events, or community groups.
 7. Cite supporting resources using their exact bracketed IDs, such as [R004].
 8. Use plain text only. Do not use Markdown formatting.
+9. Call learning ideas "suggested activities," not "invitations."
 """.strip()
 
 
@@ -50,10 +51,31 @@ def chat_user(message: str, profile: dict, history: list[dict]) -> str:
 def pathway_system(context: str) -> str:
     return (
         f"{BOUNDARY_RULES}\n\n"
-        "Create a calm, practical two-week starting pathway. Reflect the family's own "
-        "language without overclaiming what they feel. Rhythms must be small, doable, and "
-        "age-aware, with 3 to 5 rhythm items. Select exactly 2 or 3 non-community resources and exactly one community "
-        "resource, all from the provided IDs. Do not place URLs in prose.\n\n"
+        "Create a warm, practical three-page family plan for one child. The output must "
+        "follow the supplied JSON schema and cover exactly two weeks with five days per "
+        "week. Each day needs one specific, low-pressure child activity and one short "
+        "parent reflection prompt. Write child_activity for the child and parent_prompt "
+        "for the parent. The interface already labels these sections with each person's "
+        "first name, so never begin either field with 'For [name]:' and do not repeat a "
+        "name merely to identify the audience. A first name may appear naturally when it "
+        "improves clarity, but never use either person's full name in the daily plan. Do "
+        "not use second-person words such as 'you' or 'your' in parent_prompt. Each piece of "
+        "guidance must clearly apply to either the named child or the named parent. "
+        "Calibrate every suggestion to the child's age, current "
+        "interests, support needs, family values, and the concerns expressed in the "
+        "conversation. Preserve learner choice and use optional, non-directive wording "
+        "rather than commands. Refer to learning ideas as suggested activities, never as "
+        "invitations. Vary the ten days while maintaining a gentle through-line.\n\n"
+        "The family welcome should help the family feel seen in 80 to 130 words. Show the "
+        "learner_support section only when the intake identifies a learning need or a "
+        "meaningful way the child is supported. The guide_preparation field should give "
+        "the parent 2 or 3 topics they might bring to a Mosaic Guide; do not invent a "
+        "booking URL. The when_it_wobbles section must contain exactly two likely moments "
+        "of difficulty and calm, non-prescriptive responses grounded in IML.\n\n"
+        "Select 2 or 3 non-community resources and exactly one community resource using "
+        "only IDs present in MOSAIC_CONTEXT. Assign at least one resource to watch_explore "
+        "and at least one to reading_corner. Do not place URLs in prose and do not invent "
+        "Mosaic offerings.\n\n"
         f"MOSAIC_CONTEXT\n{context}\nEND_MOSAIC_CONTEXT"
     )
 
@@ -83,18 +105,42 @@ def pathway_user(profile: dict, history: list[dict]) -> str:
 PATHWAY_SCHEMA = {
     "type": "object",
     "properties": {
-        "title": {"type": "string"},
-        "reflection": {"type": "string"},
-        "rhythm": {
+        "family_welcome": {"type": "string"},
+        "learner_support": {
+            "type": "object",
+            "properties": {
+                "show": {"type": "boolean"},
+                "heading": {"type": "string"},
+                "message": {"type": "string"},
+            },
+            "required": ["show", "heading", "message"],
+            "additionalProperties": False,
+        },
+        "guide_preparation": {"type": "string"},
+        "weeks": {
             "type": "array",
             "items": {
                 "type": "object",
                 "properties": {
-                    "when": {"type": "string"},
-                    "practice": {"type": "string"},
-                    "why_it_fits": {"type": "string"},
+                    "week_number": {"type": "integer", "enum": [1, 2]},
+                    "theme": {"type": "string"},
+                    "introduction": {"type": "string"},
+                    "days": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "day": {"type": "integer"},
+                                "title": {"type": "string"},
+                                "child_activity": {"type": "string"},
+                                "parent_prompt": {"type": "string"},
+                            },
+                            "required": ["day", "title", "child_activity", "parent_prompt"],
+                            "additionalProperties": False,
+                        },
+                    },
                 },
-                "required": ["when", "practice", "why_it_fits"],
+                "required": ["week_number", "theme", "introduction", "days"],
                 "additionalProperties": False,
             },
         },
@@ -105,8 +151,12 @@ PATHWAY_SCHEMA = {
                 "properties": {
                     "resource_id": {"type": "string"},
                     "why_it_fits": {"type": "string"},
+                    "section": {
+                        "type": "string",
+                        "enum": ["watch_explore", "reading_corner"],
+                    },
                 },
-                "required": ["resource_id", "why_it_fits"],
+                "required": ["resource_id", "why_it_fits", "section"],
                 "additionalProperties": False,
             },
         },
@@ -119,8 +169,29 @@ PATHWAY_SCHEMA = {
             "required": ["resource_id", "why_it_fits"],
             "additionalProperties": False,
         },
-        "closing_note": {"type": "string"},
+        "when_it_wobbles": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "moment": {"type": "string"},
+                    "response": {"type": "string"},
+                },
+                "required": ["moment", "response"],
+                "additionalProperties": False,
+            },
+        },
+        "what_comes_next": {"type": "string"},
     },
-    "required": ["title", "reflection", "rhythm", "resources", "community", "closing_note"],
+    "required": [
+        "family_welcome",
+        "learner_support",
+        "guide_preparation",
+        "weeks",
+        "resources",
+        "community",
+        "when_it_wobbles",
+        "what_comes_next",
+    ],
     "additionalProperties": False,
 }

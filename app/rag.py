@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import math
+import os
 import re
 from dataclasses import dataclass, asdict
 from pathlib import Path
@@ -52,7 +53,14 @@ class Resource:
     @property
     def is_community(self) -> bool:
         content = self.content_type.lower()
-        return "event" in content or "community circle" in content or "coffee hour" in content
+        community_terms = (
+            "event",
+            "community",
+            "coffee hour",
+            "support group",
+            "subgroup",
+        )
+        return any(term in content for term in community_terms)
 
     def public_dict(self) -> dict:
         return {**asdict(self), "is_community": self.is_community}
@@ -68,12 +76,11 @@ class Resource:
 
 
 class KnowledgeBase:
-    """Small, auditable field-weighted retriever for the curated Mosaic CSV.
+    """Auditable field-weighted retriever for the curated Mosaic library.
 
-    This is intentionally lexical for the first prototype. It is deterministic,
-    needs no second AI provider, and makes relevance easy to inspect with a curated
-    corpus. The interface can later be backed by embeddings without changing API
-    handlers or the browser application.
+    Supabase is the primary source when DATABASE_URL is configured. The local CSV
+    remains available as a fallback so the prototype can still run during local
+    development or a temporary database outage.
     """
 
     FIELD_WEIGHTS = {
@@ -88,33 +95,116 @@ class KnowledgeBase:
 
     def __init__(self, csv_path: Path):
         self.csv_path = Path(csv_path)
+        self.database_url = os.getenv("DATABASE_URL", "").strip()
+        self.source = "csv"
+        self.load_warning: str | None = None
         self.resources = self._load()
         self._document_frequency = self._build_document_frequency()
 
     def _load(self) -> list[Resource]:
+        if self.database_url:
+            try:
+                resources = self._load_from_supabase()
+                self.source = "supabase"
+                print(f"Loaded {len(resources)} Mosaic resources from Supabase.")
+                return resources
+            except Exception as error:
+                self.load_warning = f"{type(error).__name__}: {error}"
+                print(
+                    "Supabase knowledge-base load failed. "
+                    f"Using CSV fallback instead: {self.load_warning}"
+                )
+
+        resources = self._load_from_csv()
+        print(f"Loaded {len(resources)} Mosaic resources from CSV.")
+        return resources
+
+    def _load_from_supabase(self) -> list[Resource]:
+        try:
+            import psycopg
+            from psycopg.rows import dict_row
+        except ImportError as error:
+            raise RuntimeError(
+                "Supabase support requires psycopg. Run: pip install -r requirements.txt"
+            ) from error
+
+        query = """
+            SELECT
+                "Title" AS title,
+                "Content Type" AS content_type,
+                "Category" AS category,
+                "Age Range" AS age_range,
+                "Topic Tags" AS topic_tags,
+                "Values/Intent Tags" AS values_tags,
+                "Author/Guide" AS author,
+                "Date Published" AS date_published,
+                "Source URL" AS source_url,
+                "Summary (RAG snippet)" AS summary,
+                "Key Takeaway (for pathway output)" AS key_takeaway,
+                "Parent Need / Goal" AS parent_need
+            FROM public.mosaic_resources
+            ORDER BY "Title";
+        """
+
+        with psycopg.connect(
+            self.database_url,
+            row_factory=dict_row,
+            connect_timeout=15,
+        ) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(query)
+                rows = cursor.fetchall()
+
+        resources = [
+            Resource(
+                id=f"R{index:03d}",
+                title=self._clean(row.get("title")),
+                content_type=self._clean(row.get("content_type")),
+                category=self._clean(row.get("category")),
+                age_range=self._clean(row.get("age_range")),
+                topic_tags=self._clean(row.get("topic_tags")),
+                values_tags=self._clean(row.get("values_tags")),
+                author=self._clean(row.get("author")),
+                date_published=self._clean(row.get("date_published")),
+                source_url=self._clean(row.get("source_url")),
+                summary=self._clean(row.get("summary")),
+                key_takeaway=self._clean(row.get("key_takeaway")),
+                parent_need=self._clean(row.get("parent_need")),
+            )
+            for index, row in enumerate(rows, start=1)
+        ]
+        if not resources:
+            raise ValueError("The Supabase mosaic_resources table returned no records.")
+        return resources
+
+    def _load_from_csv(self) -> list[Resource]:
         resources: list[Resource] = []
         with self.csv_path.open(encoding="utf-8-sig", newline="") as handle:
             for index, row in enumerate(csv.DictReader(handle), start=1):
                 resources.append(
                     Resource(
                         id=f"R{index:03d}",
-                        title=row.get("Title", "").strip(),
-                        content_type=row.get("Content Type", "").strip(),
-                        category=row.get("Category", "").strip(),
-                        age_range=row.get("Age Range", "").strip(),
-                        topic_tags=row.get("Topic Tags", "").strip(),
-                        values_tags=row.get("Values/Intent Tags", "").strip(),
-                        author=row.get("Author/Guide", "").strip(),
-                        date_published=row.get("Date Published", "").strip(),
-                        source_url=row.get("Source URL", "").strip(),
-                        summary=row.get("Summary (RAG snippet)", "").strip(),
-                        key_takeaway=row.get("Key Takeaway (for pathway output)", "").strip(),
-                        parent_need=row.get("Parent Need / Goal", "").strip(),
+                        title=self._clean(row.get("Title")),
+                        content_type=self._clean(row.get("Content Type")),
+                        category=self._clean(row.get("Category")),
+                        age_range=self._clean(row.get("Age Range")),
+                        topic_tags=self._clean(row.get("Topic Tags")),
+                        values_tags=self._clean(row.get("Values/Intent Tags")),
+                        author=self._clean(row.get("Author/Guide")),
+                        date_published=self._clean(row.get("Date Published")),
+                        source_url=self._clean(row.get("Source URL")),
+                        summary=self._clean(row.get("Summary (RAG snippet)")),
+                        key_takeaway=self._clean(row.get("Key Takeaway (for pathway output)")),
+                        parent_need=self._clean(row.get("Parent Need / Goal")),
                     )
                 )
         if not resources:
             raise ValueError(f"No resources found in {self.csv_path}")
         return resources
+
+    @staticmethod
+    def _clean(value: object) -> str:
+        return "" if value is None else str(value).strip()
 
     def _build_document_frequency(self) -> dict[str, int]:
         frequencies: dict[str, int] = {}
