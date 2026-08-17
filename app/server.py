@@ -162,15 +162,29 @@ def parse_ages(profile: dict) -> list[int]:
 def family_metadata(profile: dict) -> dict:
     parent_name = str(profile.get("parent_name", "")).strip() or "Your family"
     child_name = str(profile.get("child_name", "")).strip() or "Your learner"
+    child_names = [
+        name.strip()
+        for name in re.split(r"\s*(?:,|;|\band\b)\s*", child_name, flags=re.IGNORECASE)
+        if name.strip()
+    ]
+    child_first_names = [name.split()[0] for name in child_names]
+    if len(child_first_names) > 1:
+        child_first_name_display = f"{', '.join(child_first_names[:-1])} and {child_first_names[-1]}"
+    else:
+        child_first_name_display = child_first_names[0]
     ages = parse_ages(profile)
+    child_age_summary = str(profile.get("child_age", "")).strip()
     surname_parts = parent_name.split()
     family_name = f"{surname_parts[-1]} family" if surname_parts else "Your family"
     return {
         "parent_name": parent_name,
         "parent_first_name": parent_name.split()[0],
         "child_name": child_name,
-        "child_first_name": child_name.split()[0],
+        "child_first_name": child_first_names[0],
+        "child_first_names": child_first_name_display,
         "child_age": ages[0] if ages else None,
+        "child_ages": ages,
+        "child_age_summary": child_age_summary,
         "family_name": family_name,
     }
 
@@ -184,6 +198,12 @@ def profile_query(profile: dict, message: str = "") -> str:
         profile.get("preserve", ""),
         profile.get("add", ""),
         profile.get("values", ""),
+        profile.get("journey_level", ""),
+        profile.get("experienced_win", ""),
+        profile.get("experienced_challenge", ""),
+        profile.get("parent_struggle", ""),
+        profile.get("deeper_questions", ""),
+        profile.get("guidance_level", ""),
     ]
     return " ".join(str(value) for value in fields if value)
 
@@ -216,7 +236,7 @@ def clean_citations(text: str, allowed_ids: set[str]) -> str:
 
 def name_daily_guidance(pathway: dict, profile: dict) -> None:
     family = family_metadata(profile)
-    child_name = family["child_first_name"]
+    child_name = family["child_first_names"]
     parent_name = family["parent_first_name"]
     full_names = (
         (family["child_name"], child_name),
@@ -461,12 +481,36 @@ def generate_chat(payload: dict) -> dict:
 def generate_pathway(payload: dict) -> dict:
     profile = payload.get("profile") or {}
     history = payload.get("history") or []
+    prior_pathway = payload.get("current_pathway") or {}
+    if isinstance(prior_pathway, dict):
+        prior_pathway = {
+            key: value
+            for key, value in prior_pathway.items()
+            if key not in {"citation_sources", "family"}
+        }
     conversation_priorities = family_conversation_priorities(history)
     assistant_insight = latest_assistant_insight(history)
     query = profile_query(profile, " ".join(conversation_priorities))
     ages = parse_ages(profile)
-    resources = KB.search(query, ages=ages, limit=9, community=False)
-    communities = KB.search(query, ages=ages, limit=3, community=True)
+    excluded_ids = {
+        str(resource_id)
+        for resource_id in payload.get("exclude_resource_ids", [])
+        if resource_id
+    }
+    resource_candidates = KB.search(query, ages=ages, limit=24, community=False)
+    community_candidates = KB.search(query, ages=ages, limit=10, community=True)
+    resources = [resource for resource in resource_candidates if resource.id not in excluded_ids][:9]
+    communities = [resource for resource in community_candidates if resource.id not in excluded_ids][:3]
+    if len(resources) < 3:
+        resources.extend(
+            resource for resource in resource_candidates
+            if resource.id not in {item.id for item in resources}
+        )
+        resources = resources[:9]
+    if not communities:
+        communities = community_candidates[:3]
+    if not resources or not communities:
+        raise ValueError("The Mosaic knowledge base does not contain enough matching resources")
     context = KB.context([*resources, *communities])
 
     mode = "claude"
@@ -474,7 +518,7 @@ def generate_pathway(payload: dict) -> dict:
     try:
         raw = CLAUDE.create_message(
             system=pathway_system(context),
-            user=pathway_user(profile, history),
+            user=pathway_user(profile, history, prior_pathway),
             max_tokens=3200,
             json_schema=PATHWAY_SCHEMA,
         )

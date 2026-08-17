@@ -1,5 +1,22 @@
-const STORAGE_KEY = "mosaic-pathway-prototype-v1";
-const profileFields = ["parent_name", "child_name", "child_age", "interests", "learning_needs", "leave_behind", "preserve", "add", "values"];
+const STORAGE_KEY = "mosaic-pathway-prototype-v2";
+const profileFields = [
+  "parent_name",
+  "child_name",
+  "child_age",
+  "interests",
+  "learning_needs",
+  "leave_behind",
+  "preserve",
+  "add",
+  "values",
+  "journey_level",
+  "experienced_win",
+  "experienced_challenge",
+  "parent_struggle",
+  "deeper_questions",
+  "guidance_level",
+];
+const alwaysRequiredProfileFields = profileFields.filter(field => !field.startsWith("experienced_"));
 const state = loadState();
 let resourceCount = 0;
 
@@ -13,6 +30,12 @@ const devProfile = {
   preserve: "friendships",
   add: "more social skills",
   values: "autonomy",
+  journey_level: "A few years in",
+  experienced_win: "",
+  experienced_challenge: "",
+  parent_struggle: "I want a rhythm that leaves room for my own needs too.",
+  deeper_questions: "Comparing my child’s progress to other kids",
+  guidance_level: "A clear structure for each day of the week with 10 options",
 };
 
 function setStatus(message, mode) {
@@ -46,10 +69,12 @@ function loadState() {
       sessionId: saved?.sessionId || newSessionId(),
       history: saved?.history || [],
       profile: saved?.profile || {},
-      profileConfirmed: saved?.profileConfirmed === true,
+      shownResourceIds: saved?.shownResourceIds || [],
+      currentPathway: saved?.currentPathway || null,
+      answeredSinceRevision: Number(saved?.answeredSinceRevision) || 0,
     };
   } catch {
-    return { sessionId: newSessionId(), history: [], profile: {}, profileConfirmed: false };
+    return { sessionId: newSessionId(), history: [], profile: {}, shownResourceIds: [], currentPathway: null, answeredSinceRevision: 0 };
   }
 }
 
@@ -60,8 +85,6 @@ function saveState() {
 function readProfile() {
   const profile = {};
   for (const field of profileFields) profile[field] = document.getElementById(field).value.trim();
-  const age = Number.parseInt(profile.child_age, 10);
-  profile.child_age = Number.isInteger(age) && age >= 0 && age <= 30 ? age : profile.child_age;
   return profile;
 }
 
@@ -78,68 +101,36 @@ function persistProfile() {
 }
 
 function isProfileComplete() {
-  return profileFields.every(field => document.getElementById(field).value.trim().length > 0);
+  const requiredFields = [...alwaysRequiredProfileFields];
+  if (document.getElementById("journey_level").value === "Experienced, five or more years") {
+    requiredFields.push("experienced_win", "experienced_challenge");
+  }
+  return requiredFields.every(field => document.getElementById(field).value.trim().length > 0);
 }
 
-function setAssistantEnabled(enabled) {
-  const chatInput = document.getElementById("chat-input");
-  chatInput.disabled = !enabled;
-  chatInput.placeholder = enabled
-    ? "For example: How might we begin without creating another rigid schedule?"
-    : "Complete and confirm Your family details first";
-  document.querySelector("#chat-form button").disabled = !enabled;
-  document.getElementById("generate-pathway").disabled = !enabled;
+function updateExperiencedFollowup() {
+  const show = document.getElementById("journey_level").value === "Experienced, five or more years";
+  const followup = document.getElementById("experienced-followup");
+  followup.hidden = !show;
+  for (const field of followup.querySelectorAll(".conditional-profile-field")) {
+    field.required = show;
+    if (!show) field.classList.remove("is-complete");
+  }
 }
 
-function setWorkspaceState(confirmed, { animate = false } = {}) {
-  const workspace = document.querySelector(".workspace");
-  const intake = document.querySelector(".intake");
-  const conversation = document.querySelector(".conversation");
-  const start = animate && confirmed ? intake.getBoundingClientRect() : null;
-
-  workspace.classList.toggle("is-confirmed", confirmed);
-  conversation.hidden = !confirmed;
-
-  if (!start || globalThis.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-
-  const finish = intake.getBoundingClientRect();
-  intake.animate(
-    [
-      { transform: `translateX(${start.left - finish.left}px)` },
-      { transform: "translateX(0)" },
-    ],
-    { duration: 650, easing: "cubic-bezier(.22, .8, .25, 1)" },
-  );
-  conversation.animate(
-    [
-      { opacity: 0, transform: "translateX(36px)" },
-      { opacity: 1, transform: "translateX(0)" },
-    ],
-    { duration: 520, delay: 120, easing: "ease-out", fill: "both" },
-  );
-}
-
-function updateProfileCompletion({ invalidateConfirmation = false, animateWorkspace = false } = {}) {
+function updateProfileCompletion() {
+  updateExperiencedFollowup();
   for (const field of profileFields) {
     const input = document.getElementById(field);
-    input.classList.toggle("is-complete", input.value.trim().length > 0);
+    const active = !input.closest("[hidden]");
+    input.classList.toggle("is-complete", active && input.value.trim().length > 0);
   }
-  if (invalidateConfirmation) state.profileConfirmed = false;
   const complete = isProfileComplete();
   document.getElementById("enter-details").disabled = !complete;
   document.getElementById("profile-progress").textContent = complete
-    ? "All fields are complete. Confirm these details to continue."
+    ? "Your family details are ready. Build your pathway when you are ready."
     : "Complete all fields to continue.";
-  setAssistantEnabled(complete && state.profileConfirmed);
-  setWorkspaceState(complete && state.profileConfirmed, { animate: animateWorkspace });
   saveState();
-}
-
-function showConfirmation() {
-  const toast = document.getElementById("confirmation-toast");
-  toast.hidden = false;
-  toast.classList.remove("is-showing");
-  requestAnimationFrame(() => toast.classList.add("is-showing"));
 }
 
 async function api(path, payload) {
@@ -166,17 +157,21 @@ function appendCitationText(parent, text, sources = []) {
   for (const match of text.matchAll(citationPattern)) {
     parent.appendChild(document.createTextNode(text.slice(cursor, match.index)));
     const resource = sourceMap.get(match[1]);
-    const link = document.createElement("a");
-    link.className = "resource-citation";
-    link.textContent = match[0];
-    link.href = resource && isWebUrl(resource.source_url)
-      ? resource.source_url
-      : `#source-${match[1]}`;
-    if (resource && isWebUrl(resource.source_url)) {
-      link.target = "_blank";
-      link.rel = "noreferrer";
+    if (resource) {
+      const link = document.createElement("a");
+      link.className = "resource-citation";
+      link.textContent = resource.title || "Mosaic resource";
+      link.href = isWebUrl(resource.source_url)
+        ? resource.source_url
+        : `#source-${match[1]}`;
+      if (isWebUrl(resource.source_url)) {
+        link.target = "_blank";
+        link.rel = "noreferrer";
+      }
+      parent.appendChild(link);
+    } else {
+      parent.appendChild(document.createTextNode("Mosaic resource"));
     }
-    parent.appendChild(link);
     cursor = match.index + match[0].length;
   }
   parent.appendChild(document.createTextNode(text.slice(cursor)));
@@ -206,6 +201,20 @@ function addMessage(role, text, save = true, sources = []) {
   return article;
 }
 
+function resetPlanConversation() {
+  const messages = document.getElementById("messages");
+  for (const message of [...messages.querySelectorAll(".message")].slice(1)) message.remove();
+}
+
+function updateRevisionAvailability() {
+  const answered = Math.min(state.answeredSinceRevision, 3);
+  const remaining = Math.max(0, 3 - answered);
+  document.getElementById("generate-revision").disabled = remaining > 0;
+  document.getElementById("revision-progress").textContent = remaining
+    ? `${answered} of 3 questions answered. Ask ${remaining} more before updating the pathway.`
+    : "Three questions answered. Your updated pathway is ready to generate.";
+}
+
 function renderSources(sources) {
   const container = document.getElementById("sources");
   container.replaceChildren();
@@ -214,7 +223,7 @@ function renderSources(sources) {
     const article = card.querySelector(".source-card");
     article.id = `source-${source.id}`;
     const sourceId = card.querySelector(".source-id");
-    sourceId.textContent = source.id;
+    sourceId.textContent = "Mosaic source";
     sourceId.href = isWebUrl(source.source_url) ? source.source_url : `#source-${source.id}`;
     card.querySelector(".source-type").textContent = source.content_type;
     const link = card.querySelector(".source-title");
@@ -317,7 +326,12 @@ async function finishPathwayLoading(success) {
 
 document.getElementById("profile-form").addEventListener("input", () => {
   persistProfile();
-  updateProfileCompletion({ invalidateConfirmation: true });
+  updateProfileCompletion();
+});
+
+document.getElementById("profile-form").addEventListener("change", () => {
+  persistProfile();
+  updateProfileCompletion();
 });
 
 document.getElementById("dev-override").addEventListener("click", () => {
@@ -325,59 +339,8 @@ document.getElementById("dev-override").addEventListener("click", () => {
     document.getElementById(field).value = devProfile[field];
   }
   persistProfile();
-  updateProfileCompletion({ invalidateConfirmation: true });
+  updateProfileCompletion();
   document.getElementById("enter-details").focus();
-});
-
-document.getElementById("enter-details").addEventListener("click", () => {
-  persistProfile();
-  if (!isProfileComplete()) return;
-  state.profileConfirmed = true;
-  updateProfileCompletion({ animateWorkspace: true });
-  showConfirmation();
-  const reducedMotion = globalThis.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  document.querySelector(".workspace").scrollIntoView({
-    behavior: reducedMotion ? "auto" : "smooth",
-    block: "start",
-  });
-  window.setTimeout(() => {
-    document.getElementById("chat-input").focus({ preventScroll: true });
-  }, reducedMotion ? 0 : 700);
-});
-
-document.getElementById("confirmation-toast").addEventListener("animationend", event => {
-  event.currentTarget.hidden = true;
-  event.currentTarget.classList.remove("is-showing");
-});
-
-document.getElementById("chat-form").addEventListener("submit", async event => {
-  event.preventDefault();
-  const input = document.getElementById("chat-input");
-  const button = event.currentTarget.querySelector("button");
-  const message = input.value.trim();
-  if (!message) return;
-  addMessage("user", message);
-  input.value = "";
-  setBusy(button, true, "Thinking…");
-  const pending = addMessage("assistant", "Looking through Mosaic’s library…", false);
-  try {
-    const result = await api("/api/chat", { message, profile: state.profile, history: state.history.slice(0, -1) });
-    pending.remove();
-    addMessage("assistant", result.message, true, result.sources);
-    renderSources(result.sources);
-    document.getElementById("sources-panel").open = true;
-    if (result.mode === "claude") {
-      setStatus(`Claude active · response grounded in ${result.sources.length} sources`, "claude");
-    } else {
-      setStatus(`Demo fallback · retrieval active · ${resourceCount} resources`, "demo");
-    }
-  } catch (error) {
-    pending.remove();
-    addMessage("assistant", `I couldn’t complete that request. ${error.message}`, false);
-  } finally {
-    setBusy(button, false);
-    input.focus();
-  }
 });
 
 let pathwayCitationSourceMap = new Map();
@@ -434,20 +397,12 @@ function addResourceCard(parent, resource) {
   card.appendChild(title);
   appendTextElement(card, "p", resource.why_it_fits);
   const metadata = document.createElement("small");
-  const reference = document.createElement("a");
-  reference.className = "resource-reference";
-  reference.textContent = resource.id;
-  reference.href = hasWebUrl ? resource.source_url : "#sources-panel";
-  if (hasWebUrl) {
-    reference.target = "_blank";
-    reference.rel = "noreferrer";
-  }
-  metadata.append(reference, document.createTextNode(` · ${resource.content_type || "Mosaic resource"}`));
+  metadata.textContent = [resource.content_type, resource.age_range].filter(Boolean).join(" · ") || "Mosaic resource";
   card.appendChild(metadata);
   parent.appendChild(card);
 }
 
-function renderPathway(pathway) {
+function renderPathway(pathway, { scroll = true } = {}) {
   const sheet = document.getElementById("pathway-sheet");
   sheet.replaceChildren();
   const citationSources = pathway.citation_sources || [
@@ -458,9 +413,9 @@ function renderPathway(pathway) {
     citationSources.map(source => [source.id, source]),
   );
   const family = pathway.family;
-  const childFirstName = family.child_first_name || family.child_name.split(/\s+/)[0];
+  const childFirstName = family.child_first_names || family.child_first_name || family.child_name.split(/\s+/)[0];
   const parentFirstName = family.parent_first_name || family.parent_name.split(/\s+/)[0];
-  const ageText = family.child_age === null ? "" : `, age ${family.child_age}`;
+  const ageText = family.child_age_summary ? `, ${family.child_age_summary}` : "";
 
   const welcomePage = createPlanPage(1, "Your starting point");
   const welcomeContent = document.createElement("div");
@@ -598,48 +553,115 @@ function renderPathway(pathway) {
   sheet.appendChild(nextPage);
 
   const pathwayWrap = document.getElementById("pathway-wrap");
-  const feedback = document.getElementById("feedback-form");
-  const feedbackStart = feedback.getBoundingClientRect();
+  const postPlan = document.getElementById("post-plan");
+  document.getElementById("plan-collaboration").hidden = false;
   pathwayWrap.hidden = false;
-  pathwayWrap.insertAdjacentElement("afterend", feedback);
-  feedback.classList.add("is-pathway-position");
-
-  if (!globalThis.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    const feedbackFinish = feedback.getBoundingClientRect();
-    feedback.animate(
-      [
-        { opacity: 0, transform: `translateX(${feedbackStart.left - feedbackFinish.left}px) translateY(18px)` },
-        { opacity: 1, transform: "translateX(0) translateY(0)" },
-      ],
-      { duration: 650, easing: "cubic-bezier(.22, .8, .25, 1)" },
-    );
-  }
-
-  pathwayWrap.scrollIntoView({ behavior: "smooth" });
+  postPlan.hidden = false;
+  renderSources(citationSources);
+  document.getElementById("sources-panel").open = true;
+  if (scroll) pathwayWrap.scrollIntoView({ behavior: "smooth" });
 }
 
-document.getElementById("generate-pathway").addEventListener("click", async event => {
-  const button = event.currentTarget;
+function rememberPathwaySources(pathway) {
+  const { citation_sources: _citationSources, ...visiblePathway } = pathway;
+  const ids = [
+    ...(pathway.resources || []).map(resource => resource.id),
+    pathway.community?.id,
+    ...Array.from(JSON.stringify(visiblePathway).matchAll(/R\d{3}/g), match => match[0]),
+  ].filter(Boolean);
+  state.shownResourceIds = [...new Set([...state.shownResourceIds, ...ids])];
+  saveState();
+}
+
+async function createPathway(button, { revision = false } = {}) {
   let pathwayCreated = false;
-  setBusy(button, true, "Creating…");
+  setBusy(button, true, revision ? "Updating…" : "Building…");
   beginPathwayLoading();
   try {
     const result = await api("/api/pathway", {
       profile: state.profile,
       history: state.history,
+      current_pathway: revision ? state.currentPathway : null,
+      exclude_resource_ids: revision ? state.shownResourceIds : [],
     });
-    renderPathway(result.pathway);
+    renderPathway(result.pathway, { scroll: !revision });
+    rememberPathwaySources(result.pathway);
+    state.currentPathway = result.pathway;
+    saveState();
     pathwayCreated = true;
     if (result.mode === "claude") {
-      setStatus("Claude active · personalized pathway generated", "claude");
+      setStatus(revision ? "Claude active · pathway updated" : "Claude active · personalized pathway generated", "claude");
     } else {
       setStatus(`Demo fallback · pathway template · ${resourceCount} resources`, "demo");
     }
   } catch (error) {
-    addMessage("assistant", `I couldn’t create the pathway. ${error.message}`, false);
+    if (revision) {
+      throw error;
+    }
+    document.getElementById("profile-progress").textContent = `Mosaic couldn’t build the pathway yet. ${error.message}`;
   } finally {
     await finishPathwayLoading(pathwayCreated);
     setBusy(button, false);
+  }
+  return pathwayCreated;
+}
+
+document.getElementById("enter-details").addEventListener("click", async event => {
+  persistProfile();
+  if (!isProfileComplete()) return;
+  state.history = [];
+  state.shownResourceIds = [];
+  state.currentPathway = null;
+  state.answeredSinceRevision = 0;
+  resetPlanConversation();
+  updateRevisionAvailability();
+  saveState();
+  await createPathway(event.currentTarget);
+});
+
+document.getElementById("chat-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  const input = document.getElementById("chat-input");
+  const button = event.currentTarget.querySelector("button");
+  const message = input.value.trim();
+  if (!message) return;
+  addMessage("user", message);
+  input.value = "";
+  const pending = addMessage("assistant", "Looking through Mosaic’s wide variety of resources and support…", false);
+  setBusy(button, true, "Thinking…");
+  try {
+    const result = await api("/api/chat", {
+      message,
+      profile: state.profile,
+      history: state.history.slice(0, -1),
+    });
+    pending.remove();
+    addMessage("assistant", result.message, true, result.sources || []);
+    renderSources(result.sources || []);
+    state.answeredSinceRevision += 1;
+    updateRevisionAvailability();
+    saveState();
+    setStatus(result.mode === "claude" ? "Claude active · response grounded in Mosaic" : "Demo fallback · retrieval active", result.mode);
+  } catch (error) {
+    pending.remove();
+    addMessage("assistant", `I couldn’t answer that yet. ${error.message}`, false);
+  } finally {
+    setBusy(button, false);
+    input.focus({ preventScroll: true });
+  }
+});
+
+document.getElementById("generate-revision").addEventListener("click", async event => {
+  if (state.answeredSinceRevision < 3) return;
+  try {
+    const created = await createPathway(event.currentTarget, { revision: true });
+    if (!created) return;
+    state.answeredSinceRevision = 0;
+    updateRevisionAvailability();
+    saveState();
+    addMessage("assistant", "I’ve updated the pathway beside our conversation. This revised plan is now the starting point for what we explore next.");
+  } catch (error) {
+    addMessage("assistant", `I couldn’t update the pathway yet. ${error.message}`, false);
   }
 });
 
@@ -733,6 +755,7 @@ feedbackForm.addEventListener("submit", async event => {
 async function initialize() {
   hydrateProfile();
   updateProfileCompletion();
+  updateRevisionAvailability();
   for (const message of state.history) addMessage(message.role, message.content, false, message.sources || []);
   try {
     const health = await fetch("/api/health").then(response => response.json());

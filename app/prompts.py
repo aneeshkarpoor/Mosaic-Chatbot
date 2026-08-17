@@ -51,7 +51,7 @@ def chat_user(message: str, profile: dict, history: list[dict]) -> str:
 def pathway_system(context: str) -> str:
     return (
         f"{BOUNDARY_RULES}\n\n"
-        "Create a warm, practical three-page family plan for one child. The output must "
+        "Create a warm, practical three-page family plan for one or more children. The output must "
         "follow the supplied JSON schema and cover exactly two weeks with five days per "
         "week. Each day needs one specific, low-pressure child activity and one short "
         "parent reflection prompt. Write child_activity for the child and parent_prompt "
@@ -61,8 +61,10 @@ def pathway_system(context: str) -> str:
         "improves clarity, but never use either person's full name in the daily plan. Do "
         "not use second-person words such as 'you' or 'your' in parent_prompt. Each piece of "
         "guidance must clearly apply to either the named child or the named parent. "
-        "Calibrate every suggestion to the child's age, current "
-        "interests, support needs, family values, and the concerns expressed in the "
+        "When multiple children are named, account for every child and age, naming a child "
+        "by first name when a suggested activity is specific to them. Calibrate every "
+        "suggestion to the children's ages, current interests, support needs, family values, "
+        "the requested guidance level, and the concerns expressed in the "
         "conversation. Preserve learner choice and use optional, non-directive wording "
         "rather than commands. Refer to learning ideas as suggested activities, never as "
         "invitations. Vary the ten days while maintaining a gentle through-line.\n\n"
@@ -80,7 +82,7 @@ def pathway_system(context: str) -> str:
     )
 
 
-def pathway_user(profile: dict, history: list[dict]) -> str:
+def pathway_user(profile: dict, history: list[dict], prior_pathway: dict | None = None) -> str:
     conversation = [
         {
             "role": item.get("role"),
@@ -94,10 +96,16 @@ def pathway_user(profile: dict, history: list[dict]) -> str:
         f"{profile_text(profile)}\n\n"
         "FAMILY_AND_ASSISTANT_CONVERSATION\n"
         f"{json.dumps(conversation, ensure_ascii=False, indent=2)}\n\n"
+        "CURRENT_PATHWAY_TO_REVISE\n"
+        f"{json.dumps(prior_pathway or {}, ensure_ascii=False, indent=2)}\n\n"
         "Treat the family's messages as primary evidence of their questions, requests, "
         "priorities, and feedback. Treat assistant responses only as supporting context "
         "that must remain grounded in the supplied Mosaic records. Reflect the useful "
         "themes from both sides of the conversation without inventing additional concerns. "
+        "When CURRENT_PATHWAY_TO_REVISE is present, use it as the starting point. When the "
+        "conversation includes a reaction to that pathway, create a revised "
+        "pathway that keeps what resonated and directly changes what did not. The latest "
+        "family reaction has the highest priority. "
         "Return the pathway using the required JSON schema."
     )
 

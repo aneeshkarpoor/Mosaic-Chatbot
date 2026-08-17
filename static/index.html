@@ -22,8 +22,8 @@
   <main id="top">
     <section class="hero">
       <div class="hero-copy">
-        <h1>Shape a learning pathway around your family.</h1>
-        <p>Share only what feels useful. This prototype draws recommendations from Mosaic’s curated resource library.</p>
+        <h1>A learning pathway built on trust, shaped around your family.</h1>
+        <p>Families stepping away from conventional schooling need community and support. Tell us what you want to leave behind, preserve, and add, and we’ll turn it into a two-week pathway built around your family—not a generic plan built for everyone. Your pathway draws from everything Mosaic offers: community, discussions, coaching, and resources.</p>
       </div>
       <div class="hero-carousel" aria-label="Families exploring self-directed learning">
         <img class="carousel-image is-active" src="/pathway-garden.png" alt="Child tending plants in a greenhouse">
@@ -41,7 +41,7 @@
       <aside class="intake card" aria-labelledby="intake-title">
         <div class="section-heading">
           <span class="step">1</span>
-          <div><h2 id="intake-title">Intro Questionnaire</h2><p>These details guide retrieval and recommendations.</p></div>
+          <div><h2 id="intake-title">Before we begin</h2><p>Take a breath. Think about your child, and what you love about how they see the world. These questions help Mosaic get to know your family, so what comes next feels like it was actually built for you.</p></div>
           <button class="dev-override" id="dev-override" type="button" title="Fill Section 1 with development test data">DEV OVERRIDE</button>
         </div>
         <form id="profile-form">
@@ -49,94 +49,89 @@
             <span class="field-example">(Ex: Bob Jones)</span>
             <input class="profile-field" id="parent_name" name="parent_name" autocomplete="name" required>
           </label>
-          <label>Child Name
-            <span class="field-example">(Ex: Sam Jones)</span>
+          <label>Child/Children’s name/s
+            <span class="field-example">For example: Samantha, Harry, Charles</span>
             <input class="profile-field" id="child_name" name="child_name" autocomplete="off" required>
           </label>
-          <label>Child Age
-            <input class="profile-field" id="child_age" name="child_age" placeholder="For example: 10" inputmode="numeric" required>
+          <label>Child/Children’s age/s
+            <span class="field-example">For example: Samantha is 10, Harry is 11, Charles is 5</span>
+            <input class="profile-field" id="child_age" name="child_age" required>
           </label>
-          <label>Interests showing up right now
-            <textarea class="profile-field" id="interests" name="interests" rows="2" placeholder="Gaming, animals, building, stories…" required></textarea>
-          </label>
-          <label>Learning needs or ways of being supported
-            <textarea class="profile-field" id="learning_needs" name="learning_needs" rows="2" placeholder="Use your family’s own language" required></textarea>
-          </label>
-          <label>What would you like to leave behind?
-            <textarea class="profile-field" id="leave_behind" name="leave_behind" rows="2" placeholder="Pressure, rigid schedules, comparison…" required></textarea>
-          </label>
-          <label>What would you like to preserve?
-            <textarea class="profile-field" id="preserve" name="preserve" rows="2" placeholder="Friendships, routines, favorite subjects…" required></textarea>
-          </label>
-          <label>What would you like to add?
-            <textarea class="profile-field" id="add" name="add" rows="2" placeholder="More connection, movement, choice…" required></textarea>
-          </label>
-          <label>Values you want this path to reflect
-            <textarea class="profile-field" id="values" name="values" rows="2" placeholder="Autonomy, belonging, curiosity…" required></textarea>
-          </label>
+
+          <section class="intake-group" aria-labelledby="about-child-title">
+            <div class="intake-group-heading"><h3 id="about-child-title">About Your Child</h3><p>Start with what you are already noticing.</p></div>
+            <label>Interests showing up right now
+              <textarea class="profile-field" id="interests" name="interests" rows="2" placeholder="Gaming, animals, building, stories…" required></textarea>
+            </label>
+            <label>Learning needs or ways of being supported
+              <textarea class="profile-field" id="learning_needs" name="learning_needs" rows="2" placeholder="Use your family’s own language" required></textarea>
+            </label>
+            <label>What would you like to leave behind?
+              <textarea class="profile-field" id="leave_behind" name="leave_behind" rows="2" placeholder="Pressure, rigid schedules, comparison…" required></textarea>
+            </label>
+            <label>What would you like to preserve?
+              <textarea class="profile-field" id="preserve" name="preserve" rows="2" placeholder="Friendships, routines, favorite subjects…" required></textarea>
+            </label>
+            <label>What would you like to add?
+              <textarea class="profile-field" id="add" name="add" rows="2" placeholder="More connection, movement, choice…" required></textarea>
+            </label>
+            <label>Values you want this path to reflect
+              <textarea class="profile-field" id="values" name="values" rows="2" placeholder="Autonomy, belonging, curiosity…" required></textarea>
+            </label>
+          </section>
+
+          <section class="intake-group" aria-labelledby="about-parent-title">
+            <div class="intake-group-heading"><h3 id="about-parent-title">About You</h3><p>Now, make room for what this learning transition feels like for you.</p></div>
+            <label>Where are you on your journey?
+              <select class="profile-field" id="journey_level" name="journey_level" required>
+                <option value="">Choose one</option>
+                <option value="Just starting out">Just starting out</option>
+                <option value="A few years in">A few years in</option>
+                <option value="Experienced, five or more years">Experienced, five or more years</option>
+              </select>
+            </label>
+            <div class="experienced-followup" id="experienced-followup" hidden>
+              <label>What has been your biggest win, or something you would want to replicate?
+                <textarea class="profile-field conditional-profile-field" id="experienced_win" name="experienced_win" rows="2"></textarea>
+              </label>
+              <label>What is something you have never quite been able to crack in your practice?
+                <textarea class="profile-field conditional-profile-field" id="experienced_challenge" name="experienced_challenge" rows="2"></textarea>
+              </label>
+            </div>
+            <label>What are you personally struggling with right now?
+              <textarea class="profile-field" id="parent_struggle" name="parent_struggle" rows="2" placeholder="I don’t have enough time for myself. I can’t calm down. I am always moving." required></textarea>
+            </label>
+            <label>What deeper questions might you be grappling with right now?
+              <select class="profile-field" id="deeper_questions" name="deeper_questions" required>
+                <option value="">Choose one</option>
+                <option value="People-pleasing or doing things for appearances">People-pleasing or doing things for appearances</option>
+                <option value="Comparing my child’s progress to other kids">Comparing my child’s progress to other kids</option>
+                <option value="Both people-pleasing and comparison">Both of these</option>
+                <option value="Something else">Something else</option>
+              </select>
+            </label>
+            <label>How much guidance do you want in your plan?
+              <select class="profile-field" id="guidance_level" name="guidance_level" required>
+                <option value="">Choose one</option>
+                <option value="A clear structure for each day of the week with 10 options">A clear structure for each day of the week with 10 options</option>
+                <option value="A high-level plan for two weeks">A high-level plan for two weeks</option>
+              </select>
+            </label>
+          </section>
         </form>
         <div class="profile-submit">
           <p id="profile-progress">Complete all fields to continue.</p>
-          <button class="button" id="enter-details" type="button" disabled>Enter Preliminary Details</button>
+          <button class="button" id="enter-details" type="button" disabled>Build My Two-Week Pathway</button>
         </div>
         <div class="privacy-note">
-          <strong>Prototype privacy</strong>
-          <span>Family details and chat are sent to Claude to generate each response. They are saved only in this browser and are not stored by this prototype server. Submitted feedback is stored separately in Mosaic’s feedback database, with a local fallback.</span>
+          <strong>Beta privacy</strong>
+          <span>This is a closed system. Your family details and chat messages are used only to generate your response, then stay in your browser—not on Mosaic’s servers. If you leave feedback, we save it so we can improve Mosaic. Nothing is sold or shared.</span>
         </div>
         <button class="button button-danger button-quiet" id="delete-data" type="button">Delete my data</button>
       </aside>
-
-      <div class="assistant-column">
-        <section class="conversation card" aria-labelledby="chat-title" hidden>
-          <div class="section-heading">
-            <span class="step">2</span>
-            <div><h2 id="chat-title">Build a Plan with Mosaic AI</h2><p>Ask about a concern, interest, transition, or family rhythm.</p></div>
-          </div>
-          <div class="messages" id="messages" aria-live="polite">
-            <article class="message assistant">
-              <div class="avatar" aria-hidden="true">M</div>
-              <div><p>Before we build your pathway, what feels most important for your family to address during the next two weeks?</p></div>
-            </article>
-          </div>
-          <form class="composer" id="chat-form">
-            <label class="sr-only" for="chat-input">Message Mosaic</label>
-            <textarea id="chat-input" rows="2" placeholder="Complete and confirm Your family details first" required disabled></textarea>
-            <button class="button" type="submit" disabled>Send</button>
-          </form>
-          <details class="sources-panel" id="sources-panel">
-            <summary>Why did I receive this response?</summary>
-            <p class="source-explainer">These are the Mosaic records retrieved for the latest response. The model is instructed to stay within them.</p>
-            <div id="sources"></div>
-          </details>
-          <div class="pathway-action">
-            <div><strong>Ready to create your custom pathway?</strong><span>Turn our conversation into a printable two-week plan.</span></div>
-            <button class="button button-accent" id="generate-pathway" type="button" disabled>Create my pathway</button>
-          </div>
-        </section>
-
-        <form class="feedback card no-print" id="feedback-form">
-          <div class="feedback-intro"><strong>Was this experience beneficial for your family?</strong><span>Your answer helps evaluate quality, not just usage.</span></div>
-          <div class="feedback-buttons" role="group" aria-label="Was this experience beneficial?">
-            <button class="feedback-choice" type="button" data-useful="true" aria-pressed="false">Yes</button>
-            <button class="feedback-choice" type="button" data-useful="false" aria-pressed="false">No</button>
-          </div>
-          <div class="feedback-details" id="feedback-details" hidden>
-            <label class="feedback-notes" for="feedback-notes">
-              <span class="feedback-notes-heading">Anything else you'd like to share? <small>(Optional)</small></span>
-              <textarea id="feedback-notes" rows="3" placeholder="Tell us more..."></textarea>
-            </label>
-          </div>
-          <button class="button feedback-submit" id="feedback-submit" type="submit" disabled>Submit Feedback</button>
-          <p id="feedback-status" role="status"></p>
-          <div class="feedback-confirmation" id="feedback-confirmation" hidden>
-            <div class="feedback-confirmation-popup" role="status" aria-live="polite">
-              <p id="feedback-confirmation-message"></p>
-            </div>
-          </div>
-        </form>
-      </div>
     </div>
 
+    <div class="plan-collaboration" id="plan-collaboration" hidden>
     <section class="pathway-wrap" id="pathway-wrap" hidden>
       <div class="pathway-toolbar no-print">
         <div><p class="eyebrow">Your draft</p><h2>Your three-page family plan</h2></div>
@@ -145,16 +140,66 @@
       <article class="pathway-sheet" id="pathway-sheet"></article>
     </section>
 
-  </main>
+    <div class="assistant-column" id="post-plan" hidden>
+      <section class="conversation card" aria-labelledby="chat-title">
+        <div class="section-heading">
+          <span class="step">2</span>
+          <div><h2 id="chat-title">Shape what comes next with Mosaic</h2><p>React to the plan you just read. Mosaic will use what you share to revise it.</p></div>
+        </div>
+        <div class="messages" id="messages" aria-live="polite">
+          <article class="message assistant">
+            <div class="avatar" aria-hidden="true">M</div>
+            <div><p>What resonated in the plan you just read? What didn’t?</p></div>
+          </article>
+        </div>
+        <form class="composer" id="chat-form">
+          <label class="sr-only" for="chat-input">Share your reaction with Mosaic</label>
+          <textarea id="chat-input" rows="2" placeholder="Tell Mosaic what you want to keep, change, or explore further…" required></textarea>
+          <button class="button" type="submit">Send</button>
+        </form>
+        <details class="sources-panel" id="sources-panel">
+          <summary>Why did I receive this response?</summary>
+          <p class="source-explainer">This response is grounded in Mosaic resources, community discussions, and events.</p>
+          <div id="sources"></div>
+        </details>
+        <div class="revision-action">
+          <div>
+            <strong>Ready to revise your pathway?</strong>
+            <span id="revision-progress">Ask 3 questions before generating an updated pathway.</span>
+          </div>
+          <button class="button button-accent" id="generate-revision" type="button" disabled>Generate Updated Pathway</button>
+        </div>
+      </section>
 
-  <div class="confirmation-toast" id="confirmation-toast" role="status" aria-live="polite" hidden>
-    You can now work with the Mosaic Assistant to build your personalized learning pathway!
-  </div>
+      <form class="feedback card no-print" id="feedback-form">
+        <div class="feedback-intro"><strong>Was this experience beneficial for your family?</strong><span>Your answer helps evaluate quality, not just usage.</span></div>
+        <div class="feedback-buttons" role="group" aria-label="Was this experience beneficial?">
+          <button class="feedback-choice" type="button" data-useful="true" aria-pressed="false">Yes</button>
+          <button class="feedback-choice" type="button" data-useful="false" aria-pressed="false">No</button>
+        </div>
+        <div class="feedback-details" id="feedback-details" hidden>
+          <label class="feedback-notes" for="feedback-notes">
+            <span class="feedback-notes-heading">Anything else you'd like to share? <small>(Optional)</small></span>
+            <textarea id="feedback-notes" rows="3" placeholder="Tell us more..."></textarea>
+          </label>
+        </div>
+        <button class="button feedback-submit" id="feedback-submit" type="submit" disabled>Submit Feedback</button>
+        <p id="feedback-status" role="status"></p>
+        <div class="feedback-confirmation" id="feedback-confirmation" hidden>
+          <div class="feedback-confirmation-popup" role="status" aria-live="polite">
+            <p id="feedback-confirmation-message"></p>
+          </div>
+        </div>
+      </form>
+    </div>
+    </div>
+
+  </main>
 
   <div class="pathway-loading" id="pathway-loading" aria-hidden="true" hidden>
     <div class="pathway-loading-dialog" role="dialog" aria-modal="true" aria-labelledby="pathway-loading-title">
       <h2 id="pathway-loading-title">Building your family pathway</h2>
-      <p>Mosaic is bringing together your family details, conversation, and relevant resources.</p>
+      <p>Mosaic is bringing together your family details and relevant resources.</p>
       <p class="loading-stage" id="loading-stage" aria-live="polite">Preparing family information</p>
       <div class="loading-progress" role="progressbar" aria-label="Generating pathway" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
         <span class="loading-progress-fill"></span>
